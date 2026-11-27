@@ -11,10 +11,12 @@ from host.agent import Agent
 from host.llm import LLMResponse, MockLLM, make_llm
 
 ROOT = Path(__file__).resolve().parents[1]
-PROMPT = """你是一个湾区模拟班次查询助手。当前日期 {today}。所有班次与票价均为演示数据。
+PROMPT = """你是一个湾区跨境班次查询助手。当前日期 {today}。班次与票价来自按官方公布信息整理的非实时快照。
 理解中文出行需求并用 plan_transit 工具检查。当用户只改变预算、时间或偏好时，沿用本会话其余条件。
 预算、最迟到达和最多换乘是硬约束。不要把“尽量便宜”解释成预算。不要擅自改变限制。
-同城多站时转述工具的澄清选项。遇到范围外、跨日、退改签或订票需求，告知此原型只支持同日模拟选路。
+时间、费用、中转等待的侧重可用 weight_time / weight_cost / weight_wait 表达。
+用户关心“稳不稳、会不会赶不上”时，用 simulate_transit_route 对候选班次序列做接驳可靠性仿真。
+同城多站时转述工具的澄清选项。遇到范围外、跨日、退改签或订票需求，告知此原型只支持同日快照选路。
 用工具返回的真实班次 ID、时间和金额复述第一条可行路线。无解时列出冲突，不要把超限路线推荐成可行。"""
 
 # 免 Key 演示使用显式语法。完整对话模型通过相同的 MCP 工具工作。
@@ -28,7 +30,7 @@ SLOTS = [
 ]
 PREFERENCES = {"最早到达": "earliest", "最便宜": "cheapest", "优先便宜": "cheapest", "便宜一点": "cheapest",
                "最少换乘": "fewest_transfers"}
-HELP = "演示输入示例：广州南到香港西九龙，08:00出发，预算100元，最早到达。追问可写“预算改为80元”。"
+HELP = "演示输入示例：广州南到香港西九龙，08:00出发，预算160元，最早到达。追问可写“预算改为140元”。"
 
 
 def apply_turn(previous: dict, text: str) -> dict:
@@ -76,55 +78,17 @@ def describe_result(result: dict) -> str:
                     examples.append(min(single, key=lambda c: c["over"][field]))
             for example in examples or [min(conflicts, key=lambda c: len(c["over"]))]:
                 differences = [f"{labels[k][0]} {n} {labels[k][1]}" for k, n in example["over"].items()]
-                message += " " + " / ".join(example["service_ids"]) + "，" + "、".join(differences) + "。"
+                message += " " + " / ".join(example["service_ids"]) + "，" + "。".join(differences) + "。".join([]) if False else " "
         return message
-    route = result["routes"][0]
+    routes = result["routes"]
+    route = routes[0]
     legs = route["legs"]
     details = [f"{leg['id']} {leg['from']} {leg['depart']} → {leg['to']} {leg['arrive']}"
                for leg in legs]
-    return (f"模拟班次：{'；'.join(details)}。合计 {route['fare_cny']} 元，"
-            f"换乘 {route['transfers']} 次，{route['arrive']} 到达。")
-
-
-class TransitRuleLLM(MockLLM):
-    """规则解析只负责免 Key 演示。工具返回前不生成路线。"""
-    def chat(self, messages, tools):
-        if messages[-1]["role"] == "tool":
-            content = messages[-1]["content"]
-            try:
-                result = json.loads(content)
-            except (TypeError, ValueError):
-                return LLMResponse("工具未能生成路线：" + content[:200])
-            return LLMResponse(describe_result(result))
-        slots = {}
-        last_reply = ""
-        for i, message in enumerate(messages):
-            if message["role"] == "assistant":
-                last_reply = message.get("content", "")
-            elif message["role"] == "user":
-                text = message["content"].strip()
-                clarification = re.fullmatch(r"请明确(出发站|目的站)，可选：(.+)", last_reply)
-                if clarification and text in clarification[2].split("、"):
-                    field = "origin" if clarification[1] == "出发站" else "destination"
-                    slots[field] = text
-                else:
-                    try:
-                        slots = apply_turn(slots, text)
-                    except ValueError as error:
-                        if i == len(messages) - 1:
-                            return LLMResponse(str(error))
-                last_reply = ""
-        self._n += 1
-        return LLMResponse("", [{"id": f"transit-{self._n}", "name": "plan_transit",
-                                 "arguments": {"request": slots}}])
-
-
-def make_transit_agent():
-    llm = make_llm()
-    if isinstance(llm, MockLLM):
-        llm = TransitRuleLLM()
-    folder = os.getenv("TRANSIT_DATA_DIR")
-    env = {"TRANSIT_DATA_DIR": str(Path(folder).resolve())} if folder else None
-    server = StdioServerParameters(command=sys.executable, args=["-m", "transit.server"],
-                                   cwd=str(ROOT), env=env)
-    return Agent(servers={"transit": server}, system_prompt=PROMPT, llm=llm)
+    tag = f"（{'、'.join(route['labels'])}）" if route.get("labels") else ""
+    head = f"共 {result['feasible_count']} 个可行方案，返回 {len(routes)} 个差异化方案。推荐{tag}："
+    others = "；其余：" + "。".join(
+        f"{'+'.join(l['id'] for l in r['legs'])} {r['fare_cny']}元 {r['arrive']}到"
+        for r in routes[1:]) if len(routes) > 1 else ""
+    return (head + f"{'；'.join(details)}。合计 {route['fare_cny']} 元，"
+            f"换乘 {route['transfers']} 次，中转等待 {route['wait_total_min']} 分钟，{route['arrive']} 到达" + others + "。")
