@@ -78,7 +78,7 @@ def describe_result(result: dict) -> str:
                     examples.append(min(single, key=lambda c: c["over"][field]))
             for example in examples or [min(conflicts, key=lambda c: len(c["over"]))]:
                 differences = [f"{labels[k][0]} {n} {labels[k][1]}" for k, n in example["over"].items()]
-                message += " " + " / ".join(example["service_ids"]) + "，" + "。".join(differences) + "。".join([]) if False else " "
+                message += " " + " / ".join(example["service_ids"]) + "，" + "、".join(differences) + "。"
         return message
     routes = result["routes"]
     route = routes[0]
@@ -87,8 +87,52 @@ def describe_result(result: dict) -> str:
                for leg in legs]
     tag = f"（{'、'.join(route['labels'])}）" if route.get("labels") else ""
     head = f"共 {result['feasible_count']} 个可行方案，返回 {len(routes)} 个差异化方案。推荐{tag}："
-    others = "；其余：" + "。".join(
+    others = "；其余：" + "、".join(
         f"{'+'.join(l['id'] for l in r['legs'])} {r['fare_cny']}元 {r['arrive']}到"
         for r in routes[1:]) if len(routes) > 1 else ""
     return (head + f"{'；'.join(details)}。合计 {route['fare_cny']} 元，"
             f"换乘 {route['transfers']} 次，中转等待 {route['wait_total_min']} 分钟，{route['arrive']} 到达" + others + "。")
+
+
+class TransitRuleLLM(MockLLM):
+    """规则解析只负责免 Key 演示。工具返回前不生成路线。"""
+    def chat(self, messages, tools):
+        if messages[-1]["role"] == "tool":
+            content = messages[-1]["content"]
+            try:
+                result = json.loads(content)
+            except (TypeError, ValueError):
+                return LLMResponse("工具未能生成路线：" + content[:200])
+            return LLMResponse(describe_result(result))
+        slots = {}
+        last_reply = ""
+        for i, message in enumerate(messages):
+            if message["role"] == "assistant":
+                last_reply = message.get("content", "")
+            elif message["role"] == "user":
+                text = message["content"].strip()
+                clarification = re.fullmatch(r"请明确(出发站|目的站)，可选：(.+)", last_reply)
+                if clarification and text in clarification[2].split("、"):
+                    field = "origin" if clarification[1] == "出发站" else "destination"
+                    slots[field] = text
+                else:
+                    try:
+                        slots = apply_turn(slots, text)
+                    except ValueError as error:
+                        if i == len(messages) - 1:
+                            return LLMResponse(str(error))
+                last_reply = ""
+        self._n += 1
+        return LLMResponse("", [{"id": f"transit-{self._n}", "name": "plan_transit",
+                                 "arguments": {"request": slots}}])
+
+
+def make_transit_agent():
+    llm = make_llm()
+    if isinstance(llm, MockLLM):
+        llm = TransitRuleLLM()
+    folder = os.getenv("TRANSIT_DATA_DIR")
+    env = {"TRANSIT_DATA_DIR": str(Path(folder).resolve())} if folder else None
+    server = StdioServerParameters(command=sys.executable, args=["-m", "transit.server"],
+                                   cwd=str(ROOT), env=env)
+    return Agent(servers={"transit": server}, system_prompt=PROMPT, llm=llm)
