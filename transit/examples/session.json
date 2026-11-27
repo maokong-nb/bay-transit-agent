@@ -1,0 +1,101 @@
+{
+  "data": "synthetic",
+  "endpoint": "POST /chat",
+  "health": {
+    "mode": "rule-demo",
+    "tools": [
+      "list_transit_stations",
+      "plan_transit"
+    ]
+  },
+  "turns": [
+    {
+      "request": {
+        "message": "广州南到香港西九龙，08:00出发，预算100元，最早到达",
+        "session_id": "readme-demo"
+      },
+      "response": {
+        "session_id": "readme-demo",
+        "reply": "模拟班次：R12 广州南 08:40 → 深圳北 09:17；R23 深圳北 09:35 → 香港西九龙 10:01。合计 97 元，换乘 1 次，10:01 到达。",
+        "tool_calls": [
+          {
+            "tool": "plan_transit",
+            "args": {
+              "request": {
+                "origin": "广州南",
+                "destination": "香港西九龙",
+                "depart_after": "08:00",
+                "max_fare": 100,
+                "preference": "earliest"
+              }
+            },
+            "status": "ok"
+          }
+        ],
+        "usage": {
+          "prompt": 0,
+          "completion": 0
+        }
+      }
+    },
+    {
+      "request": {
+        "message": "预算改为80元",
+        "session_id": "readme-demo"
+      },
+      "response": {
+        "session_id": "readme-demo",
+        "reply": "模拟班次：B11 广州南 08:05 → 深圳湾口岸 09:35；B13 深圳湾口岸 10:00 → 香港西九龙 10:50。合计 68 元，换乘 1 次，10:50 到达。",
+        "tool_calls": [
+          {
+            "tool": "plan_transit",
+            "args": {
+              "request": {
+                "origin": "广州南",
+                "destination": "香港西九龙",
+                "depart_after": "08:00",
+                "max_fare": 80,
+                "preference": "earliest"
+              }
+            },
+            "status": "ok"
+          }
+        ],
+        "usage": {
+          "prompt": 0,
+          "completion": 0
+        }
+      }
+    },
+    {
+      "request": {
+        "message": "10:00前到",
+        "session_id": "readme-demo"
+      },
+      "response": {
+        "session_id": "readme-demo",
+        "reply": "符合接驳条件的班次均超过所给限制。 R11 / L01 / L02，超预算 43 元。 B11 / B13，晚到 50 分钟。",
+        "tool_calls": [
+          {
+            "tool": "plan_transit",
+            "args": {
+              "request": {
+                "origin": "广州南",
+                "destination": "香港西九龙",
+                "depart_after": "08:00",
+                "max_fare": 80,
+                "preference": "earliest",
+                "arrive_by": "10:00"
+              }
+            },
+            "status": "ok"
+          }
+        ],
+        "usage": {
+          "prompt": 0,
+          "completion": 0
+        }
+      }
+    }
+  ]
+}

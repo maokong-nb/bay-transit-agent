@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>湾区联程规划</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f5f3;color:#162c28;font:16px/1.6 "Source Sans 3","Microsoft YaHei",sans-serif}main{max-width:780px;margin:7vh auto;padding:0 20px}header{display:flex;align-items:baseline;justify-content:space-between;gap:12px}h1{font-size:clamp(27px,5vw,41px);letter-spacing:.01em;margin:0}h2{font-size:20px;margin:0 0 8px}.meta{font-size:14px;color:#4d655b}section{background:white;border:1px solid #c9d4cc;border-radius:12px;padding:22px;margin-top:16px}label{display:block;font-weight:650}textarea{resize:vertical;min-height:90px;width:100%;margin:8px 0;border:1px solid #a4bab0;border-radius:6px;padding:10px;font:inherit}button{color:#153d34;background:#f6faf8;border:1px solid #bdd0c5;border-radius:6px;padding:6px 12px;font:inherit;font-size:14px;cursor:pointer}button:focus-visible,textarea:focus-visible{outline:3px solid #397b70}button:disabled{opacity:.55}button.primary{color:white;background:#185246;border:0;padding:9px 18px;font-weight:600}.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.send{margin-top:14px}#answer{white-space:pre-wrap}a{color:#1d5a50}
+</style>
+<main><header><h1>湾区联程规划</h1><span class="meta" id="mode">连接中…</span></header>
+<p class="meta">合成班次 · 同日行程 · 人民币票价</p>
+<section><form id="form"><label for="question">从哪里出发，有哪些限制？</label>
+<textarea id="question" required>广州南到香港西九龙，08:00出发，预算100元，最早到达</textarea>
+<div class="controls"><button type="button" data-q="预算改为80元">改为 80 元</button><button type="button" data-q="广州南到香港西九龙，08:00出发，预算80元，10:00前到">查看无解案例</button><button type="button" data-q="深圳到香港西九龙，最早到达">查看同城多站</button></div>
+<div class="controls send"><button class="primary" id="submit">查询行程</button><button type="button" id="reset">新会话</button></div></form></section>
+<section aria-live="polite"><h2>查询结果</h2><p id="answer">等待查询。</p><p class="meta" id="tools"></p></section>
+<p class="meta"><a href="/docs">查看 API 与输入格式</a></p></main>
+<script>
+const get=id=>document.getElementById(id);
+let session=null;
+fetch('/health').then(r=>r.json()).then(d=>get('mode').textContent=d.mode==='llm'?'真实模型':'免 Key 规则演示').catch(()=>get('mode').textContent='服务未连接');
+document.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{get('question').value=b.dataset.q;get('question').focus()});
+get('reset').onclick=()=>{session=null;get('answer').textContent='新会话，请输入完整行程。';get('tools').textContent='';get('question').value='广州南到香港西九龙，08:00出发，预算100元，最早到达'};
+get('form').onsubmit=async e=>{
+ e.preventDefault();get('submit').disabled=true;get('reset').disabled=true;get('answer').textContent='正在查询…';get('tools').textContent='';
+ try{const r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:get('question').value,session_id:session})});
+ if(!r.ok)throw Error('请求失败（HTTP '+r.status+'）');const d=await r.json();session=d.session_id;get('answer').textContent=d.reply;
+ get('tools').textContent=d.tool_calls.length?'工具调用：'+d.tool_calls.map(t=>t.tool+' ('+t.status+')').join(' → '):'本轮未调用工具。'}
+ catch(err){get('answer').textContent=err.message}finally{get('submit').disabled=false;get('reset').disabled=false}
+};
+</script></html>
