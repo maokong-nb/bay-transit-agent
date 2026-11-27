@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from transit.chat import TransitRuleLLM, make_transit_agent
 from transit.planner import PlanRequest, Timetable
+from transit.simulate import SimulateRequest, simulate_route
 
 
 @asynccontextmanager
@@ -46,9 +47,19 @@ async def health(request: Request):
     return {"mode": mode, "tools": [t["function"]["name"] for t in agent.tools]}
 
 
+@app.get("/stations")
+async def stations(request: Request):
+    return {"stations": request.app.state.timetable.station_points()}
+
+
 @app.post("/plan")
 async def plan(query: PlanRequest, request: Request):
     return request.app.state.timetable.plan(query)
+
+
+@app.post("/simulate")
+async def simulate(query: SimulateRequest, request: Request):
+    return simulate_route(request.app.state.timetable, query)
 
 
 @app.post("/chat")
