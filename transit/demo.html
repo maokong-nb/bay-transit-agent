@@ -1,28 +1,120 @@
 <!doctype html>
 <html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>湾区联程规划</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
-*{box-sizing:border-box}body{margin:0;background:#f3f5f3;color:#162c28;font:16px/1.6 "Source Sans 3","Microsoft YaHei",sans-serif}main{max-width:780px;margin:7vh auto;padding:0 20px}header{display:flex;align-items:baseline;justify-content:space-between;gap:12px}h1{font-size:clamp(27px,5vw,41px);letter-spacing:.01em;margin:0}h2{font-size:20px;margin:0 0 8px}.meta{font-size:14px;color:#4d655b}section{background:white;border:1px solid #c9d4cc;border-radius:12px;padding:22px;margin-top:16px}label{display:block;font-weight:650}textarea{resize:vertical;min-height:90px;width:100%;margin:8px 0;border:1px solid #a4bab0;border-radius:6px;padding:10px;font:inherit}button{color:#153d34;background:#f6faf8;border:1px solid #bdd0c5;border-radius:6px;padding:6px 12px;font:inherit;font-size:14px;cursor:pointer}button:focus-visible,textarea:focus-visible{outline:3px solid #397b70}button:disabled{opacity:.55}button.primary{color:white;background:#185246;border:0;padding:9px 18px;font-weight:600}.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.send{margin-top:14px}#answer{white-space:pre-wrap}a{color:#1d5a50}
+*{box-sizing:border-box}body{margin:0;background:#f3f5f3;color:#162c28;font:15px/1.6 "Source Sans 3","Microsoft YaHei",sans-serif}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;max-width:1280px;margin:0 auto;padding:20px 20px 0}
+h1{font-size:clamp(24px,4vw,36px);letter-spacing:.01em;margin:0}.meta{font-size:13px;color:#4d655b}
+main{max-width:1280px;margin:12px auto;padding:0 20px;display:grid;grid-template-columns:minmax(340px,5fr) minmax(420px,7fr);gap:16px}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+section{background:white;border:1px solid #c9d4cc;border-radius:12px;padding:18px;margin-bottom:16px}
+h2{font-size:18px;margin:0 0 8px}label{display:block;font-weight:650;font-size:13px;margin-top:8px}
+textarea{resize:vertical;min-height:80px;width:100%;margin:8px 0;border:1px solid #a4bab0;border-radius:6px;padding:10px;font:inherit}
+select,input[type=time],input[type=number]{width:100%;border:1px solid #a4bab0;border-radius:6px;padding:6px 8px;font:inherit;background:white}
+button{color:#153d34;background:#f6faf8;border:1px solid #bdd0c5;border-radius:6px;padding:6px 12px;font:inherit;font-size:14px;cursor:pointer}
+button.primary{color:white;background:#185246;border:0;padding:9px 18px;font-weight:600}button:disabled{opacity:.55}
+.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#map{height:340px;border-radius:8px;border:1px solid #c9d4cc}
+.card{border:1px solid #c9d4cc;border-left:5px solid #888;border-radius:8px;padding:10px 12px;margin-top:10px;cursor:pointer}
+.card:hover{background:#f6faf8}.card .tag{display:inline-block;background:#e3efe9;color:#185246;border-radius:4px;font-size:12px;padding:0 6px;margin-right:4px}
+.card .nums{font-size:14px}.card .legs{font-size:12.5px;color:#4d655b}
+.bar{height:8px;background:#e8eeea;border-radius:4px;margin-top:6px;overflow:hidden}.bar>i{display:block;height:100%;background:#397b70}
+.risk{font-size:12.5px;color:#8a5a00}
+#answer{white-space:pre-wrap}a{color:#1d5a50}
 </style>
-<main><header><h1>湾区联程规划</h1><span class="meta" id="mode">连接中…</span></header>
-<p class="meta">合成班次 · 同日行程 · 人民币票价</p>
-<section><form id="form"><label for="question">从哪里出发，有哪些限制？</label>
-<textarea id="question" required>广州南到香港西九龙，08:00出发，预算100元，最早到达</textarea>
-<div class="controls"><button type="button" data-q="预算改为80元">改为 80 元</button><button type="button" data-q="广州南到香港西九龙，08:00出发，预算80元，10:00前到">查看无解案例</button><button type="button" data-q="深圳到香港西九龙，最早到达">查看同城多站</button></div>
-<div class="controls send"><button class="primary" id="submit">查询行程</button><button type="button" id="reset">新会话</button></div></form></section>
+<header><h1>湾区联程规划</h1><span class="meta" id="mode">连接中…</span></header>
+<main>
+<div>
+<section><h2>对话查询（多轮改需求）</h2><form id="form">
+<textarea id="question" required>广州南到香港西九龙，08:00出发，预算160元，最早到达</textarea>
+<div class="controls"><button type="button" data-q="预算改为140元">预算改为 140 元</button><button type="button" data-q="广州南到澳门，08:00出发，预算100元">去澳门</button><button type="button" data-q="深圳到香港西九龙，最早到达">同城多站</button></div>
+<div class="controls"><button class="primary" id="submit">查询行程</button><button type="button" id="reset">新会话</button></div></form></section>
 <section aria-live="polite"><h2>查询结果</h2><p id="answer">等待查询。</p><p class="meta" id="tools"></p></section>
-<p class="meta"><a href="/docs">查看 API 与输入格式</a></p></main>
+</div>
+<div>
+<section><h2>方案探索（结构化查询 + 接驳可靠性仿真）</h2>
+<div class="row"><div><label>出发</label><select id="from"></select></div><div><label>到达</label><select id="to"></select></div></div>
+<div class="row"><div><label>出发不早于</label><input type="time" id="depart" value="08:00"></div>
+<div><label>预算（元，空为不限）</label><input type="number" id="budget" min="0" placeholder="如 160"></div></div>
+<label>延误强度：<span id="factorLabel">1.0×</span>（拖动看方案稳健性变化）</label>
+<input type="range" id="factor" min="0" max="3" step="0.5" value="1" style="width:100%">
+<div class="controls"><button class="primary" id="explore">查询并仿真</button>
+<label style="font-weight:400"><input type="checkbox" id="prefCheap"> 优先便宜</label></div>
+<div id="cards"></div></section>
+<section><h2>地图</h2><div id="map"></div><p class="meta">底图 © OpenStreetMap 贡献者；班线为站点间直线示意，非实际路径。</p></section>
+</div>
+</main>
+<p class="meta" style="max-width:1280px;margin:0 auto;padding:0 20px 20px">班次与票价为按官方公布信息整理的非实时快照 · <a href="/docs">API 文档</a></p>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const get=id=>document.getElementById(id);
-let session=null;
+let session=null, stations=[], map, routeLayers=[];
+const COLORS=['#185246','#b3541e','#4a6fa5','#7d4a8c','#8c7a1e','#a03050'];
+
 fetch('/health').then(r=>r.json()).then(d=>get('mode').textContent=d.mode==='llm'?'真实模型':'免 Key 规则演示').catch(()=>get('mode').textContent='服务未连接');
+
+// ---- 地图 ----
+map=L.map('map').setView([22.6,113.95],9);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap'}).addTo(map);
+fetch('/stations').then(r=>r.json()).then(d=>{
+  stations=d.stations;
+  stations.forEach(s=>L.circleMarker([s.lat,s.lng],{radius:6,color:'#185246',fillOpacity:.9}).addTo(map).bindTooltip(s.name));
+  const names=new Set(stations.map(s=>s.name));
+  for(const sel of [get('from'),get('to')]){sel.innerHTML=[...names].map(n=>`<option>${n}</option>`).join('')}
+  get('from').value='广州南';get('to').value='香港西九龙';
+});
+
+// ---- 对话 ----
 document.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{get('question').value=b.dataset.q;get('question').focus()});
-get('reset').onclick=()=>{session=null;get('answer').textContent='新会话，请输入完整行程。';get('tools').textContent='';get('question').value='广州南到香港西九龙，08:00出发，预算100元，最早到达'};
+get('reset').onclick=()=>{session=null;get('answer').textContent='新会话，请输入完整行程。';get('tools').textContent=''};
 get('form').onsubmit=async e=>{
- e.preventDefault();get('submit').disabled=true;get('reset').disabled=true;get('answer').textContent='正在查询…';get('tools').textContent='';
+ e.preventDefault();get('submit').disabled=true;get('answer').textContent='正在查询…';get('tools').textContent='';
  try{const r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:get('question').value,session_id:session})});
  if(!r.ok)throw Error('请求失败（HTTP '+r.status+'）');const d=await r.json();session=d.session_id;get('answer').textContent=d.reply;
  get('tools').textContent=d.tool_calls.length?'工具调用：'+d.tool_calls.map(t=>t.tool+' ('+t.status+')').join(' → '):'本轮未调用工具。'}
- catch(err){get('answer').textContent=err.message}finally{get('submit').disabled=false;get('reset').disabled=false}
+ catch(err){get('answer').textContent=err.message}finally{get('submit').disabled=false}
+};
+
+// ---- 结构化探索 + 仿真 ----
+get('factor').oninput=()=>get('factorLabel').textContent=Number(get('factor').value).toFixed(1)+'×';
+function drawRoutes(routes){
+  routeLayers.forEach(l=>map.removeLayer(l));routeLayers=[];
+  routes.forEach((r,i)=>{
+    const pts=r.legs.map(l=>{const f=stations.find(s=>s.name===l.from),t=stations.find(s=>s.name===l.to);return f&&t?[[f.lat,f.lng],[t.lat,t.lng]]:null}).filter(Boolean);
+    const line=L.polyline(pts.flat(),{color:COLORS[i%COLORS.length],weight:4,opacity:.8}).addTo(map);
+    routeLayers.push(line);r._line=line;
+  });
+  if(routeLayers.length)map.fitBounds(L.featureGroup(routeLayers).getBounds().pad(.15));
+}
+get('explore').onclick=async()=>{
+  get('explore').disabled=true;get('cards').innerHTML='<p class="meta">查询中…</p>';
+  try{
+    const body={origin:get('from').value,destination:get('to').value,depart_after:get('depart').value||'00:00',
+      preference:get('prefCheap').checked?'cheapest':'earliest'};
+    if(get('budget').value!=='')body.max_fare=Number(get('budget').value);
+    const pr=await fetch('/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await pr.json();
+    if(d.status!=='ok'){get('cards').innerHTML=`<p>${d.message||'无解'}</p>`+(d.conflicts||[]).slice(0,3).map(c=>`<p class="risk">${c.service_ids.join(' + ')}：${Object.entries(c.over).map(([k,v])=>({extra_cny:'超预算 '+v+' 元',late_min:'晚到 '+v+' 分钟',extra_transfers:'多换乘 '+v+' 次'})[k]).join('，')}</p>`).join('');drawRoutes([]);return}
+    drawRoutes(d.routes);
+    const factor=Number(get('factor').value);
+    const sims=await Promise.all(d.routes.map(r=>fetch('/simulate',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({service_ids:r.legs.map(l=>l.id),delay_factor:factor,trials:2000})}).then(x=>x.json())));
+    get('cards').innerHTML=d.routes.map((r,i)=>{
+      const s=sims[i],ok=s.status==='ok';
+      return `<div class="card" style="border-left-color:${COLORS[i%COLORS.length]}" data-i="${i}">
+        <div>${(r.labels||[]).map(t=>`<span class="tag">${t}</span>`).join('')}${r.pareto?'<span class="tag">Pareto</span>':''}</div>
+        <div class="nums"><b>${r.fare_cny} 元</b> · ${r.depart} → ${r.arrive}（${r.total_time_min} 分钟）· 换乘 ${r.transfers} 次 · 等待 ${r.wait_total_min} 分钟</div>
+        <div class="legs">${r.legs.map(l=>`${l.id} ${l.from}→${l.to}`).join(' ｜ ')}</div>
+        ${ok?`<div class="bar"><i style="width:${Math.round(s.connection_success_rate*100)}%"></i></div>
+        <div class="legs">接驳成功率 ${(s.connection_success_rate*100).toFixed(1)}% · 期望到达 ${s.expected_arrive} · P90 ${s.p90_arrive}${s.riskiest_connection?` · 最薄弱：${s.riskiest_connection.station}`:''}</div>`:''}
+      </div>`}).join('');
+    document.querySelectorAll('.card').forEach(c=>c.onclick=()=>{
+      const r=d.routes[Number(c.dataset.i)];
+      routeLayers.forEach(l=>l.setStyle({opacity:.25}));r._line.setStyle({opacity:1,weight:6});
+      map.fitBounds(r._line.getBounds().pad(.2));
+    });
+  }catch(err){get('cards').innerHTML='<p>'+err.message+'</p>'}finally{get('explore').disabled=false}
 };
 </script></html>
