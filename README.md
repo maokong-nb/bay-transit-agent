@@ -1,71 +1,57 @@
-# 湾区跨境联程规划 Agent
+# 湾区跨境联程 Agent（bay-transit-agent）
 
-旅客从广州南去香港西九龙，先说"预算 100 元，想尽早到"，随后把预算改为 80 元，最后要求上午 10 点前到。这个原型沿用同一会话的起终点，从合成时刻表中找出能接上的班次，并在无解时给出可核查的差额。
+把大创“大模型增强的跨境联程路径优化”设计落地成**可运行、可演示、可验证**的工程原型：自然语言提问 → MCP 工具查询真实口径班次快照 → Pareto 多目标选路（默认 4 个差异化方案）→ 蒙特卡洛接驳可靠性仿真 → 地图可视化。
 
-![依据同一会话三次实际 HTTP 响应排版的运行记录](transit/examples/demo.png)
+![方案卡片与接驳可靠性仿真](transit/examples/demo.png)
+![大湾区地图上的路线可视化](transit/examples/demo_map.png)
 
-[查看三轮请求、工具参数和完整响应](transit/examples/session.json) · [查看 21 项自动化验收](tests/test_transit.py) · [查看合成班次](transit/fixtures/services.csv)
+## 与大创算法设计的对应关系
 
-## 三个可以当场验证的问题
-
-| 广州南 → 香港西九龙，08:00 后出发 | 本地运行结果 | 验收依据 |
+| 大创“研究二”设计 | 本工程原型的落地 | 说明 |
 | --- | --- | --- |
-| 预算 100 元，希望最早到达 | R12 → R23，97 元，10:01 到 | 深圳北接驳 18 分钟，满足该站 12 分钟下限 |
-| 同一会话把预算改为 80 元 | B11 → B13，68 元，10:50 到 | 深圳湾口岸接驳 25 分钟，满足 20 分钟下限 |
-| 再要求 10:00 前到 | 无可行路线 | 守住预算的 B11 → B13 晚 50 分钟。能准时到的 R11 → L01 → L02 超预算 43 元 |
+| LLM 意图解析：偏好 → 权重 w，限制 → 硬约束 | `weight_time / weight_cost / weight_wait` + `max_fare / arrive_by / max_transfers` | 真实 LLM 模式下由模型直接填权重字段；免 Key 模式走规则解析 |
+| 加权成本 J = w₁·Time + w₂·Cost + w₃·Trans | `score = w_t·总时长 + w_c·总费用 + w_w·中转等待` | 中转等待单独成维，对齐可研报告四个偏好维度 |
+| 累计惩罚：超预算/延误才罚 | 硬约束过滤 + 无解时输出**可验证差额**（超预算 X 元 / 晚到 Y 分钟） | 超限路线不会被推荐成可行 |
+| 生成式候选 + 多样性 | **Pareto 前沿**（时间/费用/换乘/等待四维）+ 默认 4 个差异化方案 | 对齐可研“至少 4 个个性化方案”验收口径 |
+| 动态调整 / 实时性 | 蒙特卡洛延误仿真给出**接驳成功率、期望/P90 到达、最薄弱换乘** | 固定随机种子，结果可复现 |
 
-"便宜一点"表示按总价排序，"最多 100 元"会排除超预算路线。广州南到深圳北的 R11 即使能在 R21 发车前到站，两车之间也只剩 6 分钟，系统会剔除这一组合。输入"深圳到香港西九龙"会给出三个候选出发站，下一轮可直接回复"深圳北"。
+**诚实边界**：GNN 客流建模、PPO 训练属于大创后续研究计划；本原型面向实时问答场景，用毫秒级、可解释、零训练依赖的“有界枚举 + Pareto + 加权标量化”实现同样的多目标语义。不宣称全局最优，不补造实测数字。
 
-## 在本机运行
-
-克隆本仓库后，在仓库根目录打开终端。使用 Python 3.11 或 3.12。Windows 可以直接[下载 ZIP](https://github.com/maokong-nb/bay-transit-agent/archive/refs/heads/main.zip)，先解压，再进入能看见 `requirements.txt` 的文件夹。PowerShell 中运行以下命令即可。免 Key 模式无需创建 `.env`。
-
-```powershell
-py -3 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-$env:MOCK_LLM = "1"
-.\.venv\Scripts\python.exe -m transit.web
-```
-
-macOS 或 Linux 可从仓库根目录运行：
+## 快速开始
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-MOCK_LLM=1 .venv/bin/python -m transit.web
+pip install -r requirements.txt
+python -m transit.web        # 打开 http://127.0.0.1:8001
+python -m unittest discover -s tests   # 31 项验收（规划/仿真/HTTP/MCP 全链路）
 ```
 
-打开 [本地演示页](http://127.0.0.1:8001/)，提交页面预填行程，再用"改为 80 元"填入追问并查询。[本地 API 文档](http://127.0.0.1:8001/docs) 可直接提交结构化请求。切换真实模型时，在本地配置 `LLM_API_KEY`、`LLM_BASE_URL` 和支持工具调用的 `LLM_MODEL`，清除 `MOCK_LLM` 并重启。模型请求和工具返回可能计费，实际表现待单独评测。
+- **免 Key 演示**：默认规则解析，输入“广州南到香港西九龙，08:00出发，预算160元，最早到达”，再追问“预算改为140元”看无解差额解释。
+- **真实模型**：复制 `.env.example` 为 `.env` 填入任意 OpenAI 兼容 Key，多轮对话、权重解析与仿真工具调用由 LLM 完成。
+- **演示页**：左侧多轮对话；右侧结构化查询 + 延误强度滑块（0–3×）+ 方案卡片 + OpenStreetMap 地图，拖滑块可直接观察接驳成功率变化。
 
-## 从需求到代码
+## 演示脚本（面试用）
 
-| 业务问题 | 实现位置 | 行为 |
-| --- | --- | --- |
-| 自然语言里同时含有硬约束和偏好 | [会话与工具调用](transit/chat.py) | 有 Key 时可选择兼容的模型；离线演示使用明确的中文语法。两种入口共用 MCP 工具协议 |
-| 推荐的两趟车是否接得上 | [班次搜索](transit/planner.py) | 按出发时刻、每站接驳下限枚举最多三段的同日路线，剔除环路；校验总预算、最迟到站和换乘上限，再按偏好排序 |
-| 服务如何被上层发现 | [MCP Server](transit/server.py) / [可配置宿主](host/agent.py) | stdio 独立进程提供 `list_transit_stations` 与 `plan_transit`。复用 SQLite 会话和 JSONL 工具日志 |
-| 业务系统怎样接入 | [HTTP 接口](transit/web.py) | `POST /plan` 输入结构化参数；`POST /chat` 输入自然语言；`GET /health` 查看当前模式与发现的工具 |
-| 如何复现验收 | [验收代码](tests/test_transit.py) | 13 项检查班次、边界、导入和失败解释；8 项经 FastAPI 检查 API、真实 MCP 子进程、跨轮追问及会话隔离 |
+1. `广州南 → 香港西九龙，预算 160 元`：推荐经深圳北 150 元 09:19 到（Pareto：最快+最便宜），同时给出等待更少的备选。
+2. `预算改为 140 元`：无解，返回**可验证差额**——最接近方案超预算 10 元；放宽到 150 即可。
+3. 右侧滑块拖到 2.0×：各方案接驳成功率下降幅度不同，稳健性排序当场变化。
+4. `广州南 → 澳门，预算 100 元`：广珠城际 + 拱北口岸步行，70 元。
 
-在激活项目虚拟环境后，从根目录运行：
+## 数据与口径
 
-```bash
-python -m unittest discover -s tests -p test_transit.py -v
+`transit/fixtures/`：11 站（广州/深圳/香港/珠海/澳门）、67 条班次，覆盖高铁、城际、港珠澳大桥穿梭巴士（金巴）、跨境巴士、客船、口岸接驳，按官方公布时刻票价整理的非实时快照，来源与折算口径见 [fixtures/DATA.md](transit/fixtures/DATA.md)。站点含经纬度，供地图展示。`TRANSIT_DATA_DIR` 可指向自己的数据目录做 A/B 对比。
+
+## 架构
+
+```
+transit/planner.py    有界路径枚举 + 硬约束 + Pareto 前沿 + 加权标量化 + 无解差额解释
+transit/simulate.py   蒙特卡洛接驳可靠性仿真（方式相关延误分布 × 全局强度）
+transit/server.py     MCP 服务：list_transit_stations / plan_transit / simulate_transit_route
+transit/chat.py       规则解析（免 Key）+ 真实 LLM 系统提示
+transit/web.py        FastAPI：/ /plan /simulate /stations /chat /health
+host/                 Agent 宿主：MCP 连接管理、多步工具循环、SQLite 会话记忆、调用日志
+tests/                31 项验收：规划语义、Pareto/权重、仿真统计、HTTP 与真实 MCP 子进程
 ```
 
-本次在 Python 3.12 上运行，21 项通过。对话验收使用规则解析器，运行记录中的模型 token 为 0。配套项目 [MCP 多服务智能助手](https://github.com/maokong-nb/mcp-multi-service-assistant) 的 24 题评测覆盖日期、天气和笔记服务，是另一组用例；本仓库的 `host/` 模块复用自该项目的 MCP 宿主（工具发现、会话记忆、调用日志）。
+## 背景与声明
 
-## 替换班次数据
-
-将 [stations.csv](transit/fixtures/stations.csv) 和 [services.csv](transit/fixtures/services.csv) 复制到同一目录，保留表头。设置 `TRANSIT_DATA_DIR` 为该目录后重启服务，HTTP 与 MCP 均读取这份数据。
-
-| 文件 | 必填列 | 约定 |
-| --- | --- | --- |
-| stations.csv | id, name, city, min_transfer_min | 唯一站点 ID、站名、城市、本站最少换乘分钟数 |
-| services.csv | id, origin, destination, depart, arrive, fare_cny, mode | 唯一班次 ID、两个站点 ID、同日 24 小时时刻、非负整数人民币票价、交通方式 |
-
-本例覆盖 5 个站点、12 条自建合成班次。数据不代表运营商实际线路、班次、票价或通关时间。程序只提供本地同日选路；跨日时刻、动态余票、购票及线上客运系统接入均需另行实现。多实例部署时还需引入适配的会话并发机制。
-
-## 项目来源
-
-从跨境联程大创的意图与约束设计出发，在自研的 [MCP 多服务智能助手](https://github.com/maokong-nb/mcp-multi-service-assistant) 宿主上以 AI 辅助开发完成此公开原型。这里实现的算法是小规模有界路径枚举。查阅的开源资料为 [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) 和 [OpenTripPlanner](https://github.com/opentripplanner/OpenTripPlanner)。前者用于服务发现与调用，后者可对照了解大型多模式行程规划系统的范围。
+本项目是广东工业大学省级大创“粤港澳大湾区跨境联程交通优化”研究二方向的**工程化延伸**（作者为大创学生负责人），面向 Agent 应用开发 / AI 解决方案实习岗位的作品集。原型开发使用 AI 辅助，全部验收测试与仿真数字来自本仓库可复现的代码与数据。
