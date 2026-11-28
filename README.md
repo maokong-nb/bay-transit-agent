@@ -2,8 +2,11 @@
 
 把大创“大模型增强的跨境联程路径优化”设计落地成**可运行、可演示、可验证**的工程原型：自然语言提问 → MCP 工具查询真实口径班次快照 → Pareto 多目标选路（默认 4 个差异化方案）→ 蒙特卡洛接驳可靠性仿真 → 地图可视化。
 
-![方案卡片与接驳可靠性仿真](transit/examples/demo.png)
-![大湾区地图上的路线可视化](transit/examples/demo_map.png)
+![BayTransit Copilot 商业级交互工作台](docs/screenshots/bay-demo.png)
+
+*图 1：BayTransit Copilot 商业级工作台——OpenStreetMap 交互路网 + Pareto 前沿散点图 + 蒙特卡洛抗扰动曲线 + Agent Trace。*
+
+![大湾区地图上的路线可视化](docs/screenshots/bay-demo-map.png)
 
 ## 与大创算法设计的对应关系
 

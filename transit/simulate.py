@@ -41,6 +41,7 @@ class SimulateRequest(BaseModel):
     trials: int = Field(1000, ge=100, le=20000)
     delay_factor: float = Field(1.0, ge=0.0, le=5.0, description="延误强度倍率：0 为完全准点，2 为延误翻倍")
     seed: int = 42
+    extra_transfer_buffer_min: dict[str, int] = Field(default_factory=dict, description="口岸拥堵附加换乘缓冲分钟")
 
     @field_validator("arrive_by")
     @classmethod
@@ -76,7 +77,8 @@ def simulate_route(board: Timetable, q: SimulateRequest) -> dict:
         actual_depart = [minutes(leg.depart) + d for leg, d in zip(legs, delays)]
         ok = True
         for i in range(len(legs) - 1):
-            buffer = int(board.stations[legs[i].destination]["min_transfer_min"])
+            st = board.stations[legs[i].destination]
+            buffer = int(st["min_transfer_min"]) + int(q.extra_transfer_buffer_min.get(st["name"], 0))
             if actual_arrive[i] + buffer <= actual_depart[i + 1]:
                 caught[i] += 1
             else:
@@ -111,3 +113,31 @@ def simulate_route(board: Timetable, q: SimulateRequest) -> dict:
             "catch_rate": round(worst[0], 4),
         }
     return result
+
+
+def stress_sweep(board: Timetable, service_ids: list[str], arrive_by: str | None = None,
+                 extra_transfer_buffer_min: dict[str, int] | None = None,
+                 factors: tuple[float, ...] = (0.0, 0.5, 1.0, 1.5, 2.0, 2.5),
+                 trials: int = 600) -> dict:
+    """对单条联程路径执行多档延误强度扫描，输出抗扰动曲线。"""
+    points = []
+    for f in factors:
+        res = simulate_route(
+            board,
+            SimulateRequest(
+                service_ids=service_ids,
+                arrive_by=arrive_by,
+                trials=trials,
+                delay_factor=f,
+                extra_transfer_buffer_min=extra_transfer_buffer_min or {},
+            ),
+        )
+        if res.get("status") != "ok":
+            return res
+        points.append({
+            "delay_factor": f,
+            "connection_success_rate": res["connection_success_rate"],
+            "expected_arrive": res["expected_arrive"],
+            "p90_arrive": res["p90_arrive"],
+        })
+    return {"status": "ok", "service_ids": service_ids, "points": points}

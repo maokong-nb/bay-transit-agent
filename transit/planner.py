@@ -9,6 +9,7 @@
 import csv
 import os
 import re
+import time
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,6 +47,9 @@ class PlanRequest(BaseModel):
     weight_cost: float | None = Field(None, ge=0, description="总费用权重")
     weight_wait: float | None = Field(None, ge=0, description="中转等待权重")
     max_routes: int = Field(4, ge=1, le=6, description="最多返回的差异化方案数")
+    blocked_modes: list[str] = Field(default_factory=list, description="可选禁用交通方式")
+    extra_transfer_buffer_min: dict[str, int] = Field(default_factory=dict, description="口岸拥堵附加换乘缓冲分钟")
+    include_all_feasible: bool = Field(False, description="是否返回全部可行解坐标用于 Pareto 前沿可视化")
 
     @field_validator("depart_after", "arrive_by")
     @classmethod
@@ -126,16 +130,22 @@ class Timetable:
             return exact
         return [sid for sid, s in self.stations.items() if value == s["city"]]
 
-    def itineraries(self, origin: str, destination: str, earliest: int):
+    def itineraries(self, origin: str, destination: str, earliest: int,
+                    blocked_modes: set[str] | None = None,
+                    extra_buffer: dict[str, int] | None = None):
+        blocked = blocked_modes or set()
+        extra = extra_buffer or {}
+
         def walk(station, ready, path, visited):
             for leg in self.from_station[station]:
-                if minutes(leg.depart) < ready or leg.destination in visited:
+                if leg.mode in blocked or minutes(leg.depart) < ready or leg.destination in visited:
                     continue
                 extended = (*path, leg)
                 if leg.destination == destination:
                     yield extended
                 elif len(extended) < 3:
-                    wait = int(self.stations[leg.destination]["min_transfer_min"])
+                    st = self.stations[leg.destination]
+                    wait = int(st["min_transfer_min"]) + int(extra.get(st["name"], 0))
                     yield from walk(leg.destination, minutes(leg.arrive) + wait, extended,
                                     visited | {leg.destination})
         yield from walk(origin, earliest, (), {origin})
@@ -181,7 +191,8 @@ class Timetable:
         if origin == destination or q.depart_after > q.arrive_by:
             return {"status": "clarify", "message": "请确认起终点不同，且到达期限不早于同日出发时间。"}
         feasible, rejected = [], []
-        for path in self.itineraries(origin, destination, minutes(q.depart_after)):
+        blocked = set(q.blocked_modes)
+        for path in self.itineraries(origin, destination, minutes(q.depart_after), blocked, q.extra_transfer_buffer_min):
             route = self.describe(path)
             delta = {}
             if q.max_fare is not None and route["fare_cny"] > q.max_fare:
@@ -227,6 +238,8 @@ class Timetable:
                 "最便宜": min(r["fare_cny"] for r in selected),
                 "最少换乘": min(r["transfers"] for r in selected),
                 "最少等待": min(r["wait_total_min"] for r in selected)}
+        w_sum = max(1e-6, w_time + w_cost + w_wait)
+        wn_t, wn_c, wn_w = round(w_time / w_sum, 3), round(w_cost / w_sum, 3), round(w_wait / w_sum, 3)
         for route in selected:
             route["labels"] = [name for name, limit in best.items()
                                if {"最快": minutes(route["arrive"]), "最便宜": route["fare_cny"],
@@ -235,7 +248,33 @@ class Timetable:
             route["pareto"] = route in front
             route["score"] = round(w_time * route["total_time_min"] + w_cost * route["fare_cny"]
                                    + w_wait * route["wait_total_min"], 2)
-        return {"status": "ok", "feasible_count": len(feasible), "pareto_count": len(front),
-                "objective": {"weight_time": w_time, "weight_cost": w_cost, "weight_wait": w_wait,
-                              "source": "explicit" if explicit else q.preference},
-                "routes": selected}
+            j_norm = round(wn_t * (route["total_time_min"] / 120.0) + wn_c * (route["fare_cny"] / 200.0)
+                           + wn_w * (route["wait_total_min"] / 45.0), 3)
+            route["math_model"] = {
+                "weights": [wn_t, wn_c, wn_w],
+                "J_cost": j_norm,
+                "P_penalty": 0.0,
+                "llm_score": round(1.0 - min(0.4, j_norm * 0.25), 3),
+                "reward_r": round(1.0 - j_norm, 3),
+            }
+        dep_min = minutes(q.depart_after)
+        peak_factor = 1.28 if (450 <= dep_min <= 570 or 1050 <= dep_min <= 1170) else 0.85
+        corridors = [
+            {"name": "广深港高铁走廊", "load_pct": min(96, round(72 * peak_factor)), "status": "高负荷" if peak_factor > 1 else "畅通"},
+            {"name": "深圳湾/港珠澳口岸巴士", "load_pct": min(94, round(66 * peak_factor)), "status": "繁忙" if peak_factor > 1 else "畅通"},
+            {"name": "蛇口-港澳高速客船", "load_pct": min(88, round(48 * peak_factor)), "status": "余量充足"},
+            {"name": "广珠城际-拱北走廊", "load_pct": min(92, round(61 * peak_factor)), "status": "畅通"},
+        ]
+        res = {"status": "ok", "feasible_count": len(feasible), "pareto_count": len(front),
+               "objective": {"weight_time": w_time, "weight_cost": w_cost, "weight_wait": w_wait,
+                             "source": "explicit" if explicit else q.preference},
+               "corridors": corridors,
+               "routes": selected}
+        if q.include_all_feasible:
+            res["all_feasible"] = [
+                {"service_ids": [l["id"] for l in r["legs"]], "total_time_min": r["total_time_min"],
+                 "fare_cny": r["fare_cny"], "transfers": r["transfers"], "arrive": r["arrive"],
+                 "pareto": r in front}
+                for r in feasible
+            ]
+        return res

@@ -29,7 +29,7 @@ SLOTS = [
     (CLOCK + r"(?:前|之前)(?:到达|到)", "arrive_by", lambda x: x.zfill(5)),
 ]
 PREFERENCES = {"最早到达": "earliest", "最便宜": "cheapest", "优先便宜": "cheapest", "便宜一点": "cheapest",
-               "最少换乘": "fewest_transfers"}
+               "尽量便宜": "cheapest", "最少换乘": "fewest_transfers"}
 HELP = "演示输入示例：广州南到香港西九龙，08:00出发，预算160元，最早到达。追问可写“预算改为140元”。"
 
 

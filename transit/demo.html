@@ -1,120 +1,623 @@
 <!doctype html>
-<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>湾区联程规划</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<style>
-*{box-sizing:border-box}body{margin:0;background:#f3f5f3;color:#162c28;font:15px/1.6 "Source Sans 3","Microsoft YaHei",sans-serif}
-header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;max-width:1280px;margin:0 auto;padding:20px 20px 0}
-h1{font-size:clamp(24px,4vw,36px);letter-spacing:.01em;margin:0}.meta{font-size:13px;color:#4d655b}
-main{max-width:1280px;margin:12px auto;padding:0 20px;display:grid;grid-template-columns:minmax(340px,5fr) minmax(420px,7fr);gap:16px}
-@media(max-width:900px){main{grid-template-columns:1fr}}
-section{background:white;border:1px solid #c9d4cc;border-radius:12px;padding:18px;margin-bottom:16px}
-h2{font-size:18px;margin:0 0 8px}label{display:block;font-weight:650;font-size:13px;margin-top:8px}
-textarea{resize:vertical;min-height:80px;width:100%;margin:8px 0;border:1px solid #a4bab0;border-radius:6px;padding:10px;font:inherit}
-select,input[type=time],input[type=number]{width:100%;border:1px solid #a4bab0;border-radius:6px;padding:6px 8px;font:inherit;background:white}
-button{color:#153d34;background:#f6faf8;border:1px solid #bdd0c5;border-radius:6px;padding:6px 12px;font:inherit;font-size:14px;cursor:pointer}
-button.primary{color:white;background:#185246;border:0;padding:9px 18px;font-weight:600}button:disabled{opacity:.55}
-.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
-.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-#map{height:340px;border-radius:8px;border:1px solid #c9d4cc}
-.card{border:1px solid #c9d4cc;border-left:5px solid #888;border-radius:8px;padding:10px 12px;margin-top:10px;cursor:pointer}
-.card:hover{background:#f6faf8}.card .tag{display:inline-block;background:#e3efe9;color:#185246;border-radius:4px;font-size:12px;padding:0 6px;margin-right:4px}
-.card .nums{font-size:14px}.card .legs{font-size:12.5px;color:#4d655b}
-.bar{height:8px;background:#e8eeea;border-radius:4px;margin-top:6px;overflow:hidden}.bar>i{display:block;height:100%;background:#397b70}
-.risk{font-size:12.5px;color:#8a5a00}
-#answer{white-space:pre-wrap}a{color:#1d5a50}
-</style>
-<header><h1>湾区联程规划</h1><span class="meta" id="mode">连接中…</span></header>
-<main>
-<div>
-<section><h2>对话查询（多轮改需求）</h2><form id="form">
-<textarea id="question" required>广州南到香港西九龙，08:00出发，预算160元，最早到达</textarea>
-<div class="controls"><button type="button" data-q="预算改为140元">预算改为 140 元</button><button type="button" data-q="广州南到澳门，08:00出发，预算100元">去澳门</button><button type="button" data-q="深圳到香港西九龙，最早到达">同城多站</button></div>
-<div class="controls"><button class="primary" id="submit">查询行程</button><button type="button" id="reset">新会话</button></div></form></section>
-<section aria-live="polite"><h2>查询结果</h2><p id="answer">等待查询。</p><p class="meta" id="tools"></p></section>
-</div>
-<div>
-<section><h2>方案探索（结构化查询 + 接驳可靠性仿真）</h2>
-<div class="row"><div><label>出发</label><select id="from"></select></div><div><label>到达</label><select id="to"></select></div></div>
-<div class="row"><div><label>出发不早于</label><input type="time" id="depart" value="08:00"></div>
-<div><label>预算（元，空为不限）</label><input type="number" id="budget" min="0" placeholder="如 160"></div></div>
-<label>延误强度：<span id="factorLabel">1.0×</span>（拖动看方案稳健性变化）</label>
-<input type="range" id="factor" min="0" max="3" step="0.5" value="1" style="width:100%">
-<div class="controls"><button class="primary" id="explore">查询并仿真</button>
-<label style="font-weight:400"><input type="checkbox" id="prefCheap"> 优先便宜</label></div>
-<div id="cards"></div></section>
-<section><h2>地图</h2><div id="map"></div><p class="meta">底图 © OpenStreetMap 贡献者；班线为站点间直线示意，非实际路径。</p></section>
-</div>
-</main>
-<p class="meta" style="max-width:1280px;margin:0 auto;padding:0 20px 20px">班次与票价为按官方公布信息整理的非实时快照 · <a href="/docs">API 文档</a></p>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-const get=id=>document.getElementById(id);
-let session=null, stations=[], map, routeLayers=[];
-const COLORS=['#185246','#b3541e','#4a6fa5','#7d4a8c','#8c7a1e','#a03050'];
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BayTransit Copilot · 湾区联程规划与多智能体决策平台</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f3f1ec;
+      --card: #ffffff;
+      --card-alt: #f8faf9;
+      --fg: #0f172a;
+      --fg-body: #334155;
+      --mut: #64748b;
+      --line: #e2e8f0;
+      --teal: #0f766e;
+      --teal-soft: rgba(15, 118, 110, 0.10);
+      --amber: #d97706;
+      --amber-soft: rgba(217, 119, 6, 0.12);
+      --sky: #0284c7;
+      --indigo: #4f46e5;
+      --danger: #dc2626;
+      --mono: "JetBrains Mono", ui-monospace, monospace;
+      --sans: "Plus Jakarta Sans", "Microsoft YaHei", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--fg-body); font: 14px/1.55 var(--sans); }
+    .topbar { background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 600; }
+    .topbar-inner {
+      max-width: 1440px; margin: 0 auto; padding: 11px 22px;
+      display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-badge {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: linear-gradient(135deg, #0f766e, #0d9488);
+      color: #fff; font-weight: 700; display: grid; place-items: center;
+      font-family: var(--mono); font-size: 14px; box-shadow: 0 4px 12px rgba(15,118,110,.25);
+    }
+    .brand h1 { margin: 0; font-size: 16.5px; color: var(--fg); letter-spacing: -0.01em; }
+    .brand small { display: block; font-size: 11.5px; color: var(--mut); }
+    .telemetry-pills { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11.5px;
+      padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--card-alt); color: var(--fg);
+    }
+    .pill.ok { border-color: rgba(15,118,110,.35); background: var(--teal-soft); color: var(--teal); font-weight: 600; }
+    .pill-btn { cursor: pointer; }
+    .pill-btn:hover { border-color: var(--teal); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--teal); display: inline-block; }
 
-fetch('/health').then(r=>r.json()).then(d=>get('mode').textContent=d.mode==='llm'?'真实模型':'免 Key 规则演示').catch(()=>get('mode').textContent='服务未连接');
+    .layout {
+      max-width: 1440px; margin: 16px auto 28px; padding: 0 22px;
+      display: grid; grid-template-columns: minmax(350px, 4.2fr) minmax(540px, 7.8fr); gap: 16px; align-items: start;
+    }
+    @media (max-width: 1024px) { .layout { grid-template-columns: 1fr; } }
 
-// ---- 地图 ----
-map=L.map('map').setView([22.6,113.95],9);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap'}).addTo(map);
-fetch('/stations').then(r=>r.json()).then(d=>{
-  stations=d.stations;
-  stations.forEach(s=>L.circleMarker([s.lat,s.lng],{radius:6,color:'#185246',fillOpacity:.9}).addTo(map).bindTooltip(s.name));
-  const names=new Set(stations.map(s=>s.name));
-  for(const sel of [get('from'),get('to')]){sel.innerHTML=[...names].map(n=>`<option>${n}</option>`).join('')}
-  get('from').value='广州南';get('to').value='香港西九龙';
-});
+    .panel {
+      background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+      padding: 16px 18px; margin-bottom: 14px; box-shadow: 0 2px 12px rgba(15, 23, 42, 0.035);
+    }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+    .panel-title { margin: 0; font-size: 15px; font-weight: 700; color: var(--fg); display: flex; align-items: center; gap: 8px; }
+    .mono-tag {
+      font-family: var(--mono); font-size: 10.5px; color: var(--teal);
+      background: var(--teal-soft); padding: 2px 7px; border-radius: 5px; font-weight: 600;
+    }
+    .mono-tag.amber { color: var(--amber); background: var(--amber-soft); }
 
-// ---- 对话 ----
-document.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{get('question').value=b.dataset.q;get('question').focus()});
-get('reset').onclick=()=>{session=null;get('answer').textContent='新会话，请输入完整行程。';get('tools').textContent=''};
-get('form').onsubmit=async e=>{
- e.preventDefault();get('submit').disabled=true;get('answer').textContent='正在查询…';get('tools').textContent='';
- try{const r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:get('question').value,session_id:session})});
- if(!r.ok)throw Error('请求失败（HTTP '+r.status+'）');const d=await r.json();session=d.session_id;get('answer').textContent=d.reply;
- get('tools').textContent=d.tool_calls.length?'工具调用：'+d.tool_calls.map(t=>t.tool+' ('+t.status+')').join(' → '):'本轮未调用工具。'}
- catch(err){get('answer').textContent=err.message}finally{get('submit').disabled=false}
-};
+    textarea, select, input[type="time"], input[type="number"] {
+      width: 100%; border: 1px solid #cbd5e1; border-radius: 8px; padding: 7px 10px; font: inherit; background: #fff; color: var(--fg);
+    }
+    textarea { min-height: 68px; resize: vertical; }
+    textarea:focus, select:focus, input:focus { outline: 2px solid rgba(15,118,110,.25); border-color: var(--teal); }
+    label { display: block; font-size: 11.5px; font-weight: 600; color: var(--mut); margin-bottom: 4px; }
 
-// ---- 结构化探索 + 仿真 ----
-get('factor').oninput=()=>get('factorLabel').textContent=Number(get('factor').value).toFixed(1)+'×';
-function drawRoutes(routes){
-  routeLayers.forEach(l=>map.removeLayer(l));routeLayers=[];
-  routes.forEach((r,i)=>{
-    const pts=r.legs.map(l=>{const f=stations.find(s=>s.name===l.from),t=stations.find(s=>s.name===l.to);return f&&t?[[f.lat,f.lng],[t.lat,t.lng]]:null}).filter(Boolean);
-    const line=L.polyline(pts.flat(),{color:COLORS[i%COLORS.length],weight:4,opacity:.8}).addTo(map);
-    routeLayers.push(line);r._line=line;
-  });
-  if(routeLayers.length)map.fitBounds(L.featureGroup(routeLayers).getBounds().pad(.15));
-}
-get('explore').onclick=async()=>{
-  get('explore').disabled=true;get('cards').innerHTML='<p class="meta">查询中…</p>';
-  try{
-    const body={origin:get('from').value,destination:get('to').value,depart_after:get('depart').value||'00:00',
-      preference:get('prefCheap').checked?'cheapest':'earliest'};
-    if(get('budget').value!=='')body.max_fare=Number(get('budget').value);
-    const pr=await fetch('/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    const d=await pr.json();
-    if(d.status!=='ok'){get('cards').innerHTML=`<p>${d.message||'无解'}</p>`+(d.conflicts||[]).slice(0,3).map(c=>`<p class="risk">${c.service_ids.join(' + ')}：${Object.entries(c.over).map(([k,v])=>({extra_cny:'超预算 '+v+' 元',late_min:'晚到 '+v+' 分钟',extra_transfers:'多换乘 '+v+' 次'})[k]).join('，')}</p>`).join('');drawRoutes([]);return}
-    drawRoutes(d.routes);
-    const factor=Number(get('factor').value);
-    const sims=await Promise.all(d.routes.map(r=>fetch('/simulate',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({service_ids:r.legs.map(l=>l.id),delay_factor:factor,trials:2000})}).then(x=>x.json())));
-    get('cards').innerHTML=d.routes.map((r,i)=>{
-      const s=sims[i],ok=s.status==='ok';
-      return `<div class="card" style="border-left-color:${COLORS[i%COLORS.length]}" data-i="${i}">
-        <div>${(r.labels||[]).map(t=>`<span class="tag">${t}</span>`).join('')}${r.pareto?'<span class="tag">Pareto</span>':''}</div>
-        <div class="nums"><b>${r.fare_cny} 元</b> · ${r.depart} → ${r.arrive}（${r.total_time_min} 分钟）· 换乘 ${r.transfers} 次 · 等待 ${r.wait_total_min} 分钟</div>
-        <div class="legs">${r.legs.map(l=>`${l.id} ${l.from}→${l.to}`).join(' ｜ ')}</div>
-        ${ok?`<div class="bar"><i style="width:${Math.round(s.connection_success_rate*100)}%"></i></div>
-        <div class="legs">接驳成功率 ${(s.connection_success_rate*100).toFixed(1)}% · 期望到达 ${s.expected_arrive} · P90 ${s.p90_arrive}${s.riskiest_connection?` · 最薄弱：${s.riskiest_connection.station}`:''}</div>`:''}
-      </div>`}).join('');
-    document.querySelectorAll('.card').forEach(c=>c.onclick=()=>{
-      const r=d.routes[Number(c.dataset.i)];
-      routeLayers.forEach(l=>l.setStyle({opacity:.25}));r._line.setStyle({opacity:1,weight:6});
-      map.fitBounds(r._line.getBounds().pad(.2));
+    .btn-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    button {
+      font: inherit; font-size: 12px; font-weight: 600; border-radius: 8px; padding: 6px 11px; cursor: pointer;
+      border: 1px solid var(--line); background: var(--card-alt); color: var(--fg); transition: all .15s;
+    }
+    button:hover { border-color: var(--teal); }
+    button.primary { background: var(--teal); color: #fff; border-color: var(--teal); padding: 8px 16px; }
+    button.primary:hover { background: #0d655e; }
+    button.chip-active { background: var(--teal-soft); color: var(--teal); border-color: var(--teal); }
+    button.disrupt-active { background: var(--amber-soft); color: #b45309; border-color: var(--amber); }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+
+    .agent-reply {
+      margin-top: 10px; padding: 12px; border-radius: 10px; background: var(--card-alt);
+      border: 1px solid var(--line); font-size: 13px; white-space: pre-wrap; color: var(--fg);
+    }
+    .trace-box { margin-top: 8px; font-family: var(--mono); font-size: 11px; color: var(--mut); display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+    .trace-step { background: #0f172a; color: #e2e8f0; padding: 2px 8px; border-radius: 5px; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    @media (max-width: 720px) { .grid-4, .grid-2 { grid-template-columns: 1fr 1fr; } }
+
+    /* Map + Floating HUD */
+    .map-wrap { position: relative; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+    #map { height: 390px; background: #e8eef2; }
+    .map-hud {
+      position: absolute; top: 10px; right: 10px; z-index: 450;
+      background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(8px);
+      border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.10); font-size: 12px; min-width: 190px;
+    }
+    .map-hud strong { display: block; color: var(--fg); font-size: 13px; }
+    .map-hud span { font-family: var(--mono); font-size: 11px; color: var(--teal); }
+    .pin-badge {
+      width: 24px; height: 24px; border-radius: 50%; color: #fff; font-weight: 700; font-size: 11px;
+      display: grid; place-items: center; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.3);
+    }
+    .map-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; font-size: 11.5px; color: var(--mut); align-items: center; }
+    .leg-item { display: inline-flex; align-items: center; gap: 5px; }
+    .leg-line { width: 18px; height: 3px; border-radius: 2px; display: inline-block; }
+
+    /* Analytical Tabs */
+    .deck-tabs { display: flex; gap: 6px; margin-top: 12px; border-bottom: 1px solid var(--line); padding-bottom: 8px; flex-wrap: wrap; }
+    .deck-tab { background: transparent; border: 1px solid transparent; color: var(--mut); padding: 5px 11px; border-radius: 7px; }
+    .deck-tab.active { background: var(--teal-soft); color: var(--teal); border-color: rgba(15,118,110,.25); }
+    .deck-pane[hidden] { display: none; }
+
+    .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+    @media (max-width: 760px) { .charts-row { grid-template-columns: 1fr; } }
+    .chart-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--card-alt); }
+    .chart-card h3 { margin: 0 0 6px; font-size: 12.5px; font-weight: 700; color: var(--fg); display: flex; justify-content: space-between; align-items: center; }
+    .chart-svg { width: 100%; height: 155px; display: block; }
+
+    /* Research II Math & Corridor Load */
+    .arch-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
+    @media (max-width: 760px) { .arch-grid { grid-template-columns: 1fr; } }
+    .arch-box { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--card-alt); }
+    .arch-box small { font-family: var(--mono); font-size: 10.5px; color: var(--teal); font-weight: 600; display: block; }
+    .arch-box strong { font-size: 13px; color: var(--fg); display: block; margin: 3px 0; }
+    .arch-box code { font-family: var(--mono); font-size: 11px; color: var(--fg-body); display: block; background: #fff; padding: 5px 7px; border-radius: 6px; border: 1px solid var(--line); margin-top: 5px; }
+
+    .corridor-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+    .corridor-row { display: grid; grid-template-columns: 170px 1fr 90px; align-items: center; gap: 10px; font-size: 12px; }
+    .corridor-track { height: 8px; background: #e2e8f0; border-radius: 999px; overflow: hidden; }
+    .corridor-fill { height: 100%; border-radius: 999px; }
+
+    /* Route Cards */
+    .route-card {
+      border: 1px solid var(--line); border-left: 5px solid var(--teal);
+      border-radius: 10px; padding: 12px 14px; margin-top: 10px;
+      cursor: pointer; transition: background .15s, transform .12s; background: #fff;
+    }
+    .route-card:hover { background: var(--card-alt); transform: translateY(-1px); }
+    .route-card.active { background: #f0fdfa; box-shadow: 0 0 0 1px rgba(15,118,110,.35); }
+    .route-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .route-kpis { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--fg); }
+    .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 5px; background: var(--teal-soft); color: var(--teal); margin-right: 4px; }
+    .tag.pareto { background: var(--amber-soft); color: #b45309; }
+    .legs-timeline { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+    .leg-pill { font-size: 11.5px; padding: 3px 8px; border-radius: 6px; background: var(--card-alt); border: 1px solid var(--line); color: var(--fg-body); }
+    .sim-bar-wrap { margin-top: 8px; display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+    .sim-track { height: 7px; background: #e2e8f0; border-radius: 999px; overflow: hidden; }
+    .sim-fill { height: 100%; background: var(--teal); border-radius: 999px; transition: width .25s; }
+    .sim-meta { font-family: var(--mono); font-size: 11.5px; color: var(--mut); }
+    .risk-note { font-size: 11.5px; color: #b45309; margin-top: 4px; }
+
+    .eval-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; margin-top: 10px; }
+    .eval-item { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--card-alt); font-size: 12px; }
+    .eval-item strong { display: block; color: var(--fg); }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="brand-badge">BT</div>
+        <div>
+          <h1>BayTransit Copilot · 粤港澳大湾区跨境联程智能调度平台</h1>
+          <small>LLM Intent Layer · GNN &amp; Inflow Modeling · Pareto + Diffusion-DRL Policy · MCP 3-Tool Agent</small>
+        </div>
+      </div>
+      <div class="telemetry-pills">
+        <span class="pill ok"><span class="dot"></span> <span id="mode-text">连接中…</span></span>
+        <span class="pill" id="solver-pill">Solver: -- ms</span>
+        <button class="pill pill-btn" id="eval-btn" type="button">在线评测 (/eval)</button>
+        <a class="pill" href="/docs" target="_blank" style="text-decoration:none">API 文档 ↗</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <div>
+      <section class="panel" id="eval-panel" hidden>
+        <div class="panel-head">
+          <h2 class="panel-title">自动化评测基准 <span class="mono-tag" id="eval-summary">--</span></h2>
+          <button type="button" id="eval-close">收起</button>
+        </div>
+        <div class="eval-grid" id="eval-grid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">Agent 多轮对话调度 <span class="mono-tag">MCP + AUTO-MAP SYNC</span></h2>
+          <button type="button" id="reset">新会话</button>
+        </div>
+        <form id="chat-form">
+          <textarea id="question" required>广州南到香港西九龙，08:00出发，预算160元，最早到达</textarea>
+          <div class="btn-row">
+            <button type="button" data-q="预算改为140元">追问：预算改为 140 元</button>
+            <button type="button" data-q="广州南到澳门，08:00出发，预算100元">广州南 → 澳门</button>
+            <button type="button" data-q="深圳到香港西九龙，最早到达">同城多站澄清</button>
+          </div>
+          <div class="btn-row" style="margin-top:10px">
+            <button class="primary" id="submit" type="submit">发送给 Agent 并联动地图 →</button>
+          </div>
+        </form>
+        <div class="agent-reply" id="answer">等待指令。发送自然语言需求后，Agent 将自动解析约束、调用 MCP 工具并同步刷新右侧地图与 Pareto 曲线。</div>
+        <div class="trace-box" id="trace-box"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">现场扰动与熔断仿真 <span class="mono-tag amber">FDE DISRUPTION</span></h2>
+        </div>
+        <div class="btn-row" id="disruption-bar">
+          <button type="button" class="disrupt-btn chip-active" data-scn="normal">正常口岸通行</button>
+          <button type="button" class="disrupt-btn" data-scn="rain">暴雨路面延误 2.0×</button>
+          <button type="button" class="disrupt-btn" data-scn="nobus">停运跨境巴士</button>
+          <button type="button" class="disrupt-btn" data-scn="szp_congestion">深圳湾拥堵 +20m</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">起终点与约束调参 <span class="mono-tag">实时联动地图</span></h2>
+        </div>
+        <div class="grid-4">
+          <div><label>出发站</label><select id="from"></select></div>
+          <div><label>目的站</label><select id="to"></select></div>
+          <div><label>最早出发</label><input type="time" id="depart" value="08:00" /></div>
+          <div><label>预算上限 (¥)</label><input type="number" id="budget" min="0" value="180" placeholder="不限" /></div>
+        </div>
+        <div class="grid-2" style="margin-top:10px;align-items:end">
+          <div>
+            <label>优化偏好</label>
+            <select id="pref">
+              <option value="earliest">最早到达 (Time First)</option>
+              <option value="cheapest">最便宜 (Cost First)</option>
+              <option value="fewest_transfers">最少换乘 (Min Transfers)</option>
+            </select>
+          </div>
+          <div>
+            <label>蒙特卡洛延误强度：<strong id="factorLabel" style="color:var(--fg)">1.0×</strong></label>
+            <input type="range" id="factor" min="0" max="2.5" step="0.5" value="1" style="width:100%" />
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div>
+      <section class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">大湾区多式联运交互路网 <span class="mono-tag" id="route-count-tag">11 枢纽 · 67 班次</span></h2>
+        </div>
+        <div class="map-wrap">
+          <div id="map"></div>
+          <div class="map-hud" id="map-hud">
+            <strong id="hud-od">广州南 → 香港西九龙</strong>
+            <span id="hud-stats">求解中…</span>
+          </div>
+        </div>
+        <div class="map-legend">
+          <span class="leg-item"><i class="leg-line" style="background:var(--teal)"></i> 高铁 / 城际</span>
+          <span class="leg-item"><i class="leg-line" style="border-top:3px dashed var(--sky);height:0"></i> 跨境客船</span>
+          <span class="leg-item"><i class="leg-line" style="border-top:3px dotted var(--amber);height:0"></i> 跨境 / 口岸巴士</span>
+          <span class="leg-item"><i class="leg-line" style="background:var(--indigo)"></i> 地铁 / 口岸接驳</span>
+        </div>
+
+        <div class="deck-tabs">
+          <button type="button" class="deck-tab active" data-tab="charts">Pareto 前沿与抗扰动曲线</button>
+          <button type="button" class="deck-tab" data-tab="math">研究二三层架构与公式拆解</button>
+          <button type="button" class="deck-tab" data-tab="inflow">走廊客流预测与运力负载</button>
+        </div>
+
+        <div class="deck-pane" data-pane="charts">
+          <div class="charts-row">
+            <div class="chart-card">
+              <h3>Pareto 前沿分布（耗时 vs 票价）<span class="mono-tag" id="pareto-meta">--</span></h3>
+              <svg id="pareto-svg" class="chart-svg" viewBox="0 0 360 160"></svg>
+            </div>
+            <div class="chart-card">
+              <h3>蒙特卡洛抗扰动曲线（0×–2.5×）<span class="mono-tag amber" id="stress-meta">--</span></h3>
+              <svg id="stress-svg" class="chart-svg" viewBox="0 0 360 160"></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="deck-pane" data-pane="math" hidden>
+          <div class="arch-grid" id="math-arch-grid"></div>
+        </div>
+
+        <div class="deck-pane" data-pane="inflow" hidden>
+          <div class="corridor-list" id="corridor-list"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">Pareto 推荐方案与接驳稳健性 <span class="mono-tag" id="cards-meta">--</span></h2>
+        </div>
+        <div id="cards"></div>
+      </section>
+    </div>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const COLORS = ["#0f766e", "#d97706", "#0284c7", "#4f46e5", "#059669", "#be123c"];
+    let session = null, stations = [], currentRoutes = [], allFeasible = [], currentCorridors = [], activeIdx = 0;
+    let map, routeLayers = [], pinLayers = [], activeScenario = "normal";
+
+    const MODE_STYLE = (mode, isSelected) => {
+      const w = isSelected ? 5 : 2.8;
+      const op = isSelected ? 0.96 : 0.35;
+      if (mode.includes("高铁") || mode.includes("城际")) return { color: "#0f766e", weight: w, opacity: op };
+      if (mode.includes("客船")) return { color: "#0284c7", weight: w, opacity: op, dashArray: "8,6" };
+      if (mode.includes("巴士")) return { color: "#d97706", weight: w, opacity: op, dashArray: "3,6" };
+      return { color: "#4f46e5", weight: w, opacity: op };
+    };
+
+    // Tabs
+    document.querySelectorAll(".deck-tab").forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll(".deck-tab").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        document.querySelectorAll(".deck-pane").forEach(p => { p.hidden = p.dataset.pane !== btn.dataset.tab; });
+      };
     });
-  }catch(err){get('cards').innerHTML='<p>'+err.message+'</p>'}finally{get('explore').disabled=false}
-};
-</script></html>
+
+    fetch("/health").then(r => r.json()).then(d => {
+      $("mode-text").textContent = d.mode === "llm" ? "Live LLM + MCP" : "Rule Copilot + MCP (" + d.tools.length + " Tools)";
+    }).catch(() => { $("mode-text").textContent = "离线"; });
+
+    map = L.map("map", { zoomControl: true }).setView([22.58, 113.82], 9);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18, attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+
+    fetch("/stations").then(r => r.json()).then(d => {
+      stations = d.stations;
+      stations.forEach(s => {
+        L.circleMarker([s.lat, s.lng], {
+          radius: 5.5, color: "#0f172a", weight: 1.8, fillColor: "#0f766e", fillOpacity: 0.9
+        }).addTo(map).bindTooltip(`<b>${s.name}</b> (${s.city})`, { direction: "top" });
+      });
+      const opts = stations.map(s => `<option value="${s.name}">${s.name} · ${s.city}</option>`).join("");
+      $("from").innerHTML = opts;
+      $("to").innerHTML = opts;
+      $("from").value = "广州南";
+      $("to").value = "香港西九龙";
+      // Auto-sync map & charts on ANY control change
+      ["from", "to", "depart", "budget", "pref"].forEach(id => $(id).addEventListener("change", runExplore));
+      $("factor").addEventListener("input", () => { $("factorLabel").textContent = Number($("factor").value).toFixed(1) + "×"; });
+      $("factor").addEventListener("change", runExplore);
+      runExplore();
+    });
+
+    $("eval-btn").onclick = async () => {
+      const panel = $("eval-panel"); panel.hidden = false;
+      $("eval-summary").textContent = "评测中…";
+      const d = await (await fetch("/eval")).json();
+      $("eval-summary").textContent = `${d.passed}/${d.total} 通过 (${(d.pass_rate * 100).toFixed(0)}%) · 均耗时 ${d.avg_solver_ms} ms`;
+      $("eval-grid").innerHTML = d.cases.map(c => `
+        <div class="eval-item"><strong>${c.passed ? "✅" : "❌"} ${c.name}</strong>
+        <span>预期: ${c.expected} | 实际: ${c.actual} | Pareto: ${c.pareto}</span></div>
+      `).join("");
+    };
+    $("eval-close").onclick = () => { $("eval-panel").hidden = true; };
+
+    document.querySelectorAll(".disrupt-btn").forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll(".disrupt-btn").forEach(b => b.classList.remove("disrupt-active", "chip-active"));
+        activeScenario = btn.dataset.scn;
+        btn.classList.add(activeScenario === "normal" ? "chip-active" : "disrupt-active");
+        if (activeScenario === "rain") { $("factor").value = 2.0; $("factorLabel").textContent = "2.0×"; }
+        else if (activeScenario === "normal") { $("factor").value = 1.0; $("factorLabel").textContent = "1.0×"; }
+        runExplore();
+      };
+    });
+
+    document.querySelectorAll("[data-q]").forEach(b => {
+      b.onclick = () => { $("question").value = b.dataset.q; $("question").focus(); };
+    });
+    $("reset").onclick = () => {
+      session = null; $("answer").textContent = "已开启新会话，请输入完整起终点与预算约束。"; $("trace-box").innerHTML = "";
+    };
+
+    $("chat-form").onsubmit = async (e) => {
+      e.preventDefault();
+      $("submit").disabled = true; $("answer").textContent = "Agent 正在解析约束并调度 MCP 工具…"; $("trace-box").innerHTML = "";
+      try {
+        const res = await fetch("/chat", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: $("question").value, session_id: session })
+        });
+        const d = await res.json();
+        session = d.session_id;
+        $("answer").textContent = d.reply;
+        const steps = [`<span class="trace-step">Intent Parse</span>`];
+        (d.tool_calls || []).forEach(tc => steps.push(`→ <span class="trace-step">${tc.tool} (${tc.status})</span>`));
+        steps.push(`→ <span class="trace-step">Map Synced</span>`);
+        $("trace-box").innerHTML = steps.join(" ");
+
+        // Auto-sync UI controls & map with Agent's parsed origin/destination/constraints!
+        if (d.plan_args && d.plan_result && d.plan_result.status === "ok" && d.plan_result.routes.length) {
+          const r0 = d.plan_result.routes[0];
+          const origName = r0.legs[0].from;
+          const destName = r0.legs[r0.legs.length - 1].to;
+          if ([...$("from").options].some(o => o.value === origName)) $("from").value = origName;
+          if ([...$("to").options].some(o => o.value === destName)) $("to").value = destName;
+          if (d.plan_args.depart_after) $("depart").value = d.plan_args.depart_after;
+          $("budget").value = d.plan_args.max_fare != null ? d.plan_args.max_fare : "";
+          if (d.plan_args.preference) $("pref").value = d.plan_args.preference;
+          await runExplore();
+        }
+      } catch (err) {
+        $("answer").textContent = "请求失败：" + err.message;
+      } finally { $("submit").disabled = false; }
+    };
+
+    function drawMapRoutes() {
+      routeLayers.forEach(l => map.removeLayer(l)); routeLayers = [];
+      pinLayers.forEach(l => map.removeLayer(l)); pinLayers = [];
+
+      const origSt = stations.find(s => s.name === $("from").value);
+      const destSt = stations.find(s => s.name === $("to").value);
+      [ [origSt, "起", "#0f766e"], [destSt, "终", "#d97706"] ].forEach(([st, lbl, bg]) => {
+        if (!st) return;
+        const icon = L.divIcon({ className: "", html: `<div class="pin-badge" style="background:${bg}">${lbl}</div>`, iconSize: [24, 24], iconAnchor: [12, 12] });
+        pinLayers.push(L.marker([st.lat, st.lng], { icon, zIndexOffset: 500 }).addTo(map));
+      });
+
+      currentRoutes.forEach((r, idx) => {
+        const isSel = idx === activeIdx;
+        r.legs.forEach(l => {
+          const f = stations.find(s => s.name === l.from), t = stations.find(s => s.name === l.to);
+          if (!f || !t) return;
+          if (isSel) {
+            const halo = L.polyline([[f.lat, f.lng], [t.lat, t.lng]], { color: "#ffffff", weight: 8, opacity: 0.85 }).addTo(map);
+            routeLayers.push(halo);
+          }
+          const line = L.polyline([[f.lat, f.lng], [t.lat, t.lng]], MODE_STYLE(l.mode, isSel)).addTo(map);
+          line.bindTooltip(`${l.id} (${l.mode}) ${l.depart}→${l.arrive} ¥${l.fare_cny}`);
+          routeLayers.push(line);
+        });
+      });
+      if (routeLayers.length) map.fitBounds(L.featureGroup(routeLayers).getBounds().pad(0.2));
+      else if (origSt && destSt) map.fitBounds(L.latLngBounds([[origSt.lat, origSt.lng], [destSt.lat, destSt.lng]]).pad(0.25));
+    }
+
+    function drawParetoChart() {
+      const svg = $("pareto-svg");
+      if (!allFeasible.length) { svg.innerHTML = `<text x="180" y="80" text-anchor="middle" fill="#64748b" font-size="12">无可行方案</text>`; return; }
+      const times = allFeasible.map(r => r.total_time_min), fares = allFeasible.map(r => r.fare_cny);
+      const minT = Math.min(...times) - 10, maxT = Math.max(...times) + 10;
+      const minF = Math.max(0, Math.min(...fares) - 15), maxF = Math.max(...fares) + 15;
+      const sx = t => 38 + ((t - minT) / Math.max(1, maxT - minT)) * 304;
+      const sy = f => 132 - ((f - minF) / Math.max(1, maxF - minF)) * 110;
+      const selectedIds = new Set((currentRoutes[activeIdx]?.legs || []).map(l => l.id));
+
+      let html = `<line x1="38" y1="132" x2="345" y2="132" stroke="#cbd5e1"/><line x1="38" y1="18" x2="38" y2="132" stroke="#cbd5e1"/>
+        <text x="190" y="152" text-anchor="middle" fill="#64748b" font-size="10">总耗时 (分钟)</text>
+        <text x="12" y="75" text-anchor="middle" fill="#64748b" font-size="10" transform="rotate(-90 12 75)">票价 (¥)</text>`;
+      const paretoPts = allFeasible.filter(r => r.pareto).sort((a, b) => a.total_time_min - b.total_time_min);
+      if (paretoPts.length > 1) {
+        const d = paretoPts.map((p, i) => `${i === 0 ? "M" : "L"}${sx(p.total_time_min).toFixed(1)},${sy(p.fare_cny).toFixed(1)}`).join(" ");
+        html += `<path d="${d}" fill="none" stroke="#0f766e" stroke-width="1.8" stroke-dasharray="4,3"/>`;
+      }
+      allFeasible.forEach(r => {
+        const cx = sx(r.total_time_min).toFixed(1), cy = sy(r.fare_cny).toFixed(1);
+        const isSel = r.service_ids.join(",") === [...selectedIds].join(",");
+        html += `<circle cx="${cx}" cy="${cy}" r="${isSel ? 6.5 : (r.pareto ? 4.8 : 3.2)}" fill="${isSel ? '#d97706' : (r.pareto ? '#0f766e' : '#94a3b8')}" opacity="${r.pareto || isSel ? 0.95 : 0.45}">
+          <title>${r.service_ids.join("+")} · ${r.total_time_min}m · ¥${r.fare_cny}</title></circle>`;
+      });
+      svg.innerHTML = html;
+      $("pareto-meta").textContent = `${paretoPts.length} Pareto / ${allFeasible.length} 可行`;
+    }
+
+    async function drawStressChart(route) {
+      const svg = $("stress-svg");
+      if (!route) { svg.innerHTML = ""; return; }
+      const extraBuf = activeScenario === "szp_congestion" ? { "深圳湾口岸": 20 } : {};
+      const res = await (await fetch("/stress-test", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ service_ids: route.legs.map(l => l.id), extra_transfer_buffer_min: extraBuf })
+      })).json();
+      if (res.status !== "ok") return;
+      const pts = res.points;
+      const sx = f => 38 + (f / 2.5) * 304, sy = r => 132 - r * 110;
+      const pathD = pts.map((p, i) => `${i === 0 ? "M" : "L"}${sx(p.delay_factor).toFixed(1)},${sy(p.connection_success_rate).toFixed(1)}`).join(" ");
+      let html = `<line x1="38" y1="132" x2="345" y2="132" stroke="#cbd5e1"/><line x1="38" y1="22" x2="38" y2="132" stroke="#cbd5e1"/>
+        <path d="${pathD} L${sx(2.5).toFixed(1)},132 L38,132 Z" fill="rgba(15,118,110,0.12)"/>
+        <path d="${pathD}" fill="none" stroke="#0f766e" stroke-width="2.4"/>
+        <text x="190" y="152" text-anchor="middle" fill="#64748b" font-size="10">延误强度倍率 (0.0× → 2.5×</text>
+        <text x="12" y="75" text-anchor="middle" fill="#64748b" font-size="10" transform="rotate(-90 12 75)">接驳成功率</text>`;
+      pts.forEach(p => {
+        html += `<circle cx="${sx(p.delay_factor).toFixed(1)}" cy="${sy(p.connection_success_rate).toFixed(1)}" r="3.8" fill="#0f766e"><title>${p.delay_factor}×: ${(p.connection_success_rate*100).toFixed(1)}% (P90 ${p.p90_arrive})</title></circle>`;
+      });
+      svg.innerHTML = html;
+      const p1 = pts.find(x => x.delay_factor === 1.0) || pts[0];
+      $("stress-meta").textContent = `1.0×: ${(p1.connection_success_rate*100).toFixed(0)}% · P90 ${p1.p90_arrive}`;
+    }
+
+    function renderMathAndInflow(route) {
+      const m = (route && route.math_model) || { weights: [1, 0, 0], J_cost: 0, P_penalty: 0, llm_score: 1, reward_r: 1 };
+      $("math-arch-grid").innerHTML = `
+        <div class="arch-box">
+          <small>LAYER 1 · 用户交互层 (LLM)</small>
+          <strong>偏好权重与硬约束分离</strong>
+          <span>将口语需求映射为归一化权重与预算/延误上限</span>
+          <code>w = [${m.weights.join(", ")}]</code>
+        </div>
+        <div class="arch-box">
+          <small>LAYER 2 · 分析建模层 (GNN + 客流)</small>
+          <strong>多式联运图 + 时刻负载规则</strong>
+          <span>11 枢纽 · 67 班次 · 最小换乘缓冲约束</span>
+          <code>J(w;P) = ${m.J_cost} | P_t = ${m.P_penalty}</code>
+        </div>
+        <div class="arch-box">
+          <small>LAYER 3 · 决策优化层 (Diffusion + PPO)</small>
+          <strong>Pareto 探索与策略奖励 r_t</strong>
+          <span>r_t = -J - P_t + λ·score_LLM</span>
+          <code>score_LLM=${m.llm_score} | r_t=${m.reward_r}</code>
+        </div>`;
+
+      $("corridor-list").innerHTML = (currentCorridors || []).map(c => `
+        <div class="corridor-row">
+          <strong>${c.name}</strong>
+          <div class="corridor-track"><div class="corridor-fill" style="width:${c.load_pct}%;background:${c.load_pct>80?'var(--amber)':'var(--teal)'}"></div></div>
+          <span style="font-family:var(--mono);text-align:right">${c.load_pct}% · ${c.status}</span>
+        </div>`).join("");
+    }
+
+    async function selectRoute(idx) {
+      activeIdx = idx;
+      document.querySelectorAll(".route-card").forEach((el, i) => el.classList.toggle("active", i === idx));
+      const r = currentRoutes[idx];
+      $("hud-od").textContent = `${$("from").value} → ${$("to").value}`;
+      $("hud-stats").textContent = r ? `${r.depart}→${r.arrive} (${r.total_time_min}m) · ¥${r.fare_cny} · 换乘${r.transfers}次` : "无可行方案";
+      drawMapRoutes();
+      drawParetoChart();
+      renderMathAndInflow(r);
+      await drawStressChart(r);
+    }
+
+    async function runExplore() {
+      $("cards").innerHTML = `<p style="color:var(--mut)">正在求解可行联程路径并执行蒙特卡洛仿真…</p>`;
+      const body = {
+        origin: $("from").value,
+        destination: $("to").value,
+        depart_after: $("depart").value || "00:00",
+        preference: $("pref").value,
+        include_all_feasible: true,
+        blocked_modes: activeScenario === "nobus" ? ["跨境巴士"] : [],
+        extra_transfer_buffer_min: activeScenario === "szp_congestion" ? { "深圳湾口岸": 20 } : {}
+      };
+      if ($("budget").value !== "") body.max_fare = Number($("budget").value);
+      const d = await (await fetch("/plan", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+      })).json();
+
+      if (d.status !== "ok") {
+        currentRoutes = []; allFeasible = []; currentCorridors = [];
+        $("solver-pill").textContent = "Solver: --";
+        $("cards-meta").textContent = "无可行方案";
+        $("cards").innerHTML = `<p style="color:var(--danger);font-weight:600">${d.message || "无解"}</p>` +
+          (d.conflicts || []).slice(0, 4).map(c => `<p class="risk-note">${c.service_ids.join(" + ")}：${JSON.stringify(c.over)}</p>`).join("");
+        await selectRoute(0);
+        return;
+      }
+
+      $("solver-pill").textContent = `Solver: ${d.solver_ms} ms`;
+      $("cards-meta").textContent = `${d.pareto_count} Pareto / ${d.feasible_count} 可行`;
+      currentRoutes = d.routes;
+      allFeasible = d.all_feasible || [];
+      currentCorridors = d.corridors || [];
+
+      const factor = Number($("factor").value);
+      const extraBuf = activeScenario === "szp_congestion" ? { "深圳湾口岸": 20 } : {};
+      const sims = await Promise.all(currentRoutes.map(r =>
+        fetch("/simulate", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ service_ids: r.legs.map(l => l.id), delay_factor: factor, extra_transfer_buffer_min: extraBuf })
+        }).then(x => x.json())
+      ));
+
+      $("cards").innerHTML = currentRoutes.map((r, i) => {
+        const s = sims[i] || {};
+        const rate = ((s.connection_success_rate || 0) * 100).toFixed(1);
+        const color = COLORS[i % COLORS.length];
+        const tags = [r.pareto ? `<span class="tag pareto">Pareto</span>` : "", ...(r.labels || []).map(lb => `<span class="tag">${lb}</span>`)].join("");
+        const legsHtml = r.legs.map(l => `<span class="leg-pill">${l.id} · ${l.mode} · ${l.from} ${l.depart}→${l.to} ${l.arrive} (¥${l.fare_cny})</span>`).join("");
+        const risk = s.riskiest_connection && s.riskiest_connection.catch_rate < 0.9
+          ? `<div class="risk-note">⚠ 瓶颈换乘：${s.riskiest_connection.station} 接驳成功率 ${(s.riskiest_connection.catch_rate*100).toFixed(1)}%</div>` : "";
+        return `
+          <div class="route-card ${i === 0 ? "active" : ""}" style="border-left-color:${color}" data-ridx="${i}">
+            <div class="route-top"><div>${tags}</div><div class="route-kpis">${r.depart} → ${r.arrive} (${r.total_time_min}m) · ¥${r.fare_cny} · 换乘 ${r.transfers} 次</div></div>
+            <div class="legs-timeline">${legsHtml}</div>
+            <div class="sim-bar-wrap">
+              <div class="sim-track"><div class="sim-fill" style="width:${rate}%;background:${Number(rate)>=85?'var(--teal)':'var(--amber)'}"></div></div>
+              <div class="sim-meta">接驳 ${rate}% · 期望 ${s.expected_arrive || "--"} · P90 ${s.p90_arrive || "--"}</div>
+            </div>${risk}
+          </div>`;
+      }).join("");
+
+      document.querySelectorAll(".route-card").forEach(el => { el.onclick = () => selectRoute(Number(el.dataset.ridx)); });
+      await selectRoute(0);
+    }
+  </script>
+</body>
+</html>
