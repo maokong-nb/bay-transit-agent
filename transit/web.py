@@ -114,6 +114,7 @@ async def evaluate_system(request: Request):
 
 @app.post("/chat")
 async def chat(query: ChatRequest, request: Request):
+    t0 = time.perf_counter()
     session_id = query.session_id or uuid4().hex
     lock = request.app.state.session_locks.setdefault(session_id, Lock())
     async with lock:
@@ -130,7 +131,14 @@ async def chat(query: ChatRequest, request: Request):
                 except Exception:
                     plan_payload = None
                 break
-    return {"session_id": session_id, "plan_result": plan_payload, "plan_args": plan_args, **result}
+    chat_ms = round((time.perf_counter() - t0) * 1000, 2)
+    ans_len = len(str(result.get("answer", "")))
+    telemetry = {
+        "chat_ms": chat_ms,
+        "tool_calls": len(result.get("tool_calls", [])),
+        "context_tokens_est": max(120, (len(query.message) + ans_len) // 2 + len(result.get("tool_calls", [])) * 140),
+    }
+    return {"session_id": session_id, "plan_result": plan_payload, "plan_args": plan_args, "telemetry": telemetry, **result}
 
 
 if __name__ == "__main__":

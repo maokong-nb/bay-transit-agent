@@ -411,6 +411,9 @@
         const steps = [`<span class="trace-step">Intent Parse</span>`];
         (d.tool_calls || []).forEach(tc => steps.push(`→ <span class="trace-step">${tc.tool} (${tc.status})</span>`));
         steps.push(`→ <span class="trace-step">Map Synced</span>`);
+        if (d.telemetry) {
+          steps.push(`<span class="mono-tag">${d.telemetry.chat_ms} ms · ~${d.telemetry.context_tokens_est} tok</span>`);
+        }
         $("trace-box").innerHTML = steps.join(" ");
 
         // Auto-sync UI controls & map with Agent's parsed origin/destination/constraints!
